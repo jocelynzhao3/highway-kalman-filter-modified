@@ -1,4 +1,4 @@
-/* \author Aaron Brown */
+/* \author Aaron Brown, Moorissa Tjokro */
 // Create simple 3d highway enviroment using PCL
 // for exploring self-driving car sensors
 
@@ -33,7 +33,7 @@ int main(int argc, char** argv)
 		viewer->removeAllShapes();
 
 		//stepHighway(egoVelocity,time_us, frame_per_sec, viewer);
-		highway.stepHighway(egoVelocity,time_us, frame_per_sec, viewer);
+		highway.stepHighway(egoVelocity, time_us, frame_per_sec, viewer);
 		viewer->spinOnce(1000/frame_per_sec);
 		frame_count++;
 		time_us = 1000000*frame_count/frame_per_sec;

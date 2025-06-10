@@ -68,10 +68,10 @@ If you'd like to generate your own radar and lidar modify the code in `highway.h
 change how measurements are taken, for instance lidar markers could be the (x,y) center of bounding boxes by scanning the PCD environment and performing clustering.
 
 
-## UKF Implementation <a name="implementation"></a>
+## 4. UKF Implementation <a name="implementation"></a>
 
 ### 1. Parameters
-In the `highway.h`, there are a number of parameters we can modify for debugging purpose.
+File(s): `highway.h` - there are a number of parameters we can modify for debugging purpose.
 - `trackCars` list can toggle on/off cars for UKF object to track
 - `projectedTime` and `projectedSteps` controls the visualization of predicted position in the future
 - `visualize_pcd` sets the visualization of Lidar point cloud data
@@ -89,6 +89,17 @@ int projectedSteps = 0;
 ```
 
 ### 2. Code Walkthrough
+#### 2.1. Initialize UKF attributes
+File(s): `ukf.cpp`
+- dimension of the state vector `n_x_`
+- state vector `x_`
+- covariance matrix `P_`
+- dimension of the augmented state vector `n_aug_`
+- predicted sigma points matrix `Xsig_pred_`
+- sigma points weights vector `weights_`
+- standard deviation of longitudinal acceleration noise `std_a_`
+- standard deviation of yaw acceleration noise `std_yawdd_`
+- sigma points spreading parameter `lambda_`
 
 
 
