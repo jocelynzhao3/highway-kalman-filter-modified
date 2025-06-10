@@ -102,6 +102,27 @@ File(s): `ukf.cpp`
 - sigma points spreading parameter `lambda_`
 
 
+#### 2.2. Implement process measurement
+File(s): `ukf.cpp` -> `UKF::ProcessMeasurement`
+
+For the very first incoming measurement, state vector `x_`, covariance matrix `P_`, and timestamp `time_us_` are initialized according to the raw data `meas_package.raw_measurements_` and `meas_package.timestamp_`.
+
+For the following measurements, timestamp `time_us_` is recorded, a sequence of functions are called to `Prediction()` and `UpdateLidar()`/`UpdateRadar()`.
+
+Main functionality of `UKF::ProcessMeasurement`:
+- Initialization: On first measurement, initializes the state vector with position data from either LIDAR (direct x,y) or RADAR (converted from polar coordinates)
+- Prediction: Uses the motion model to predict where the object should be at the current timestamp
+- Update: Corrects the prediction using the actual sensor measurement
+Key points:
+
+The state vector has 5 elements: `[px, py, v, yaw, yawd]` representing position, velocity, yaw angle, and yaw rate
+- LIDAR gives direct cartesian coordinates, while RADAR provides polar coordinates that need conversion
+- The filter alternates between prediction (based on motion model) and update (based on sensor measurements)
+- Time intervals are calculated and converted from microseconds to seconds for the prediction step
+
+This is a typical sensor fusion implementation where both LIDAR and RADAR measurements are used to track an object's state over time.
+
+
 
 ## Ackowledgements <a name="acknowledgements"></a>
 * [Udacity Sensor Fusion Program](https://www.udacity.com/course/sensor-fusion-engineer-nanodegree--nd313)

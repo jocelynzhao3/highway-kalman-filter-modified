@@ -87,10 +87,80 @@ UKF::UKF() {
 UKF::~UKF() {}
 
 void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
-  /**
-   * TODO: Complete this function! Make sure you switch between lidar and radar
-   * measurements.
-   */
+  // Check if the UKF has been initialized with the first measurement
+  if (!is_initialized_) {
+    // Initialize the state vector based on the first measurement
+    if (meas_package.sensor_type_ == MeasurementPackage::LASER) {
+      // LIDAR provides direct x,y position measurements
+      // Set the state with the initial location and zero velocity
+      // State vector: [px, py, v, yaw, yawd]
+      x_ << meas_package.raw_measurements_[0],  // px - x position
+            meas_package.raw_measurements_[1],  // py - y position
+            0,                                  // v - velocity (unknown, set to 0)
+            0,                                  // yaw - yaw angle (unknown, set to 0)
+            0;                                  // yawd - yaw rate (unknown, set to 0)
+    }
+    else if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
+      // RADAR provides polar coordinates: range, bearing, range rate
+      double rho = meas_package.raw_measurements_[0];      // range (distance)
+      double phi = meas_package.raw_measurements_[1];      // bearing (angle)
+      double rho_dot = meas_package.raw_measurements_[2];  // range rate (radial velocity)
+
+      // Convert polar coordinates to cartesian coordinates
+      // Set the state with the initial location and zero velocity
+      x_ << rho * cos(phi),  // px - convert range/bearing to x position
+            rho * sin(phi),  // py - convert range/bearing to y position
+            0,               // v - velocity (unknown, set to 0)
+            0,               // yaw - yaw angle (unknown, set to 0)
+            0;               // yawd - yaw rate (unknown, set to 0)
+    }
+    else {
+      // Invalid sensor type - print error and exit
+      std::cerr << "UKF::ProcessMeasurement() error: cannot initialize because of invalid measurement sensor type " << meas_package.sensor_type_<< std::endl;
+      exit(EXIT_FAILURE);
+    }
+
+    // Store the timestamp and mark the filter as initialized
+    time_us_ = meas_package.timestamp_;
+    is_initialized_ = true;
+
+    // Debug output showing initialization
+    if (bDebug)
+      std::cout << "UKF::ProcessMeasurement() initializes for sensor type " << meas_package.sensor_type_ << " - state vector x:\n" << x_ << std::endl;
+
+    return;  // Exit early after initialization
+  }
+
+  // Calculate time elapsed since last measurement
+  // Convert from microseconds to seconds
+  double dt = (meas_package.timestamp_ - time_us_) / 1000000.0;
+  time_us_ = meas_package.timestamp_;  // Update stored timestamp
+
+  // PREDICTION STEP: Predict the state and covariance to the current time
+  Prediction(dt);
+  if (bDebug)
+    std::cout << "UKF::ProcessMeasurement() predicts the state vector x:\n" << x_ << std::endl;
+
+  // UPDATE STEP: Update the predicted state with the new measurement
+  if (meas_package.sensor_type_ == MeasurementPackage::LASER) {
+    // Use LIDAR-specific update function (linear measurement model)
+    UpdateLidar(meas_package);
+    if (bDebug)
+      std::cout << "UKF::ProcessMeasurement() Lidar update - state vector x:\n" << x_ << std::endl;
+  }
+  else if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
+    // Use RADAR-specific update function (non-linear measurement model)
+    UpdateRadar(meas_package);
+    if (bDebug)
+      std::cout << "UKF::ProcessMeasurement() Radar update - state vector x:\n" << x_ << std::endl;
+  }
+  else {
+    // Invalid sensor type during update - print error and exit
+    std::cerr << "UKF::ProcessMeasurement() error: cannot update measurement because of invalid measurement sensor type " << meas_package.sensor_type_ << std::endl;
+    exit(EXIT_FAILURE);
+  }
+
+  return;
 }
 
 void UKF::Prediction(double delta_t) {
