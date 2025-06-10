@@ -5,9 +5,14 @@ This project implements an Unscented Kalman Filter to estimate the state of mult
 
 <img src="media/ukf_highway_tracked.gif" width="700" height="400" />
 
+`main.cpp` is using `highway.h` to create a straight 3 lane highway environment with 3 traffic cars and the main ego car at the center. The viewer scene is centered around the ego car and the coordinate system is relative to the ego car as well. The ego car is green while the other traffic cars are blue. The traffic cars will be accelerating and altering their steering to change lanes. Each of the traffic car's has its own UKF object generated for it, and will update each indidual one during every time step. 
+
+The red spheres above cars represent the (x,y) lidar detection and the purple lines show the radar measurements with the velocity magnitude along the detected angle. The Z axis is not taken into account for tracking, so we're only tracking along the X/Y axis in this project.
+
 
 ## 2. Table of Contents
 - [Project Instructions](#build)
+- [UKF Implementation](#implementation)
 - [Acknowledgements](#acknowledgements)
 
 
@@ -17,11 +22,11 @@ The main program can be built and ran by doing the following from the project to
 1. Clone this repo with LFS, which can be done in two ways:
   1. `git lfs clone https://github.com/moorissa/lidar-obstacle-detector.git` OR
   2. Alternatively:
-    ```bash
+  ```bash
     git clone https://github.com/moorissa/lidar-obstacle-detector.git
     cd lidar-obstacle-detector  # ensure no duplicated names in the same directory
     git lfs pull
-    ```
+  ```
   If LFS continues causing (submission) issues:
    - Upload PCD files to a cloud service (Google Drive, Dropbox) and include download links
    - Use smaller sample PCD files that don't require LFS
@@ -31,12 +36,6 @@ The main program can be built and ran by doing the following from the project to
 4. Run it: `./ukf_highway`
 
 <img src="media/ukf_highway.png" width="700" height="400" />
-
-`main.cpp` is using `highway.h` to create a straight 3 lane highway environment with 3 traffic cars and the main ego car at the center. 
-The viewer scene is centered around the ego car and the coordinate system is relative to the ego car as well. The ego car is green while the 
-other traffic cars are blue. The traffic cars will be accelerating and altering their steering to change lanes. Each of the traffic car's has its own UKF object generated for it, and will update each indidual one during every time step. 
-
-The red spheres above cars represent the (x,y) lidar detection and the purple lines show the radar measurements with the velocity magnitude along the detected angle. The Z axis is not taken into account for tracking, so we're only tracking along the X/Y axis in this project.
 
 #### Dependencies
 * cmake >= 3.10
@@ -67,6 +66,30 @@ The red spheres above cars represent the (x,y) lidar detection and the purple li
 #### Generating Additional Data
 If you'd like to generate your own radar and lidar modify the code in `highway.h` to alter the cars. Check out `tools.cpp` to
 change how measurements are taken, for instance lidar markers could be the (x,y) center of bounding boxes by scanning the PCD environment and performing clustering.
+
+
+## UKF Implementation <a name="implementation"></a>
+
+### 1. Parameters
+In the `highway.h`, there are a number of parameters we can modify for debugging purpose.
+- `trackCars` list can toggle on/off cars for UKF object to track
+- `projectedTime` and `projectedSteps` controls the visualization of predicted position in the future
+- `visualize_pcd` sets the visualization of Lidar point cloud data
+
+```c++
+// Set which cars to track with UKF
+std::vector<bool> trackCars = {true,true,true};
+// Visualize sensor measurements
+bool visualize_lidar = true;
+bool visualize_radar = true;
+bool visualize_pcd = false;
+// Predict path in the future using UKF
+double projectedTime = 0;
+int projectedSteps = 0;
+```
+
+### 2. Code Walkthrough
+
 
 
 ## Ackowledgements <a name="acknowledgements"></a>
