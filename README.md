@@ -35,6 +35,8 @@ The main program can be built and ran by doing the following from the project to
 3. Compile: `cmake .. && make -j`
 4. Run it: `./ukf_highway`
 
+In short, you can rerun it with: `rm -rf ./* && cmake .. && make && ./ukf_highway`
+
 <img src="assets/ukf_highway.png" width="700" height="400" />
 
 #### Dependencies

@@ -40,9 +40,9 @@ UKF::UKF() {
   P_ = MatrixXd(n_x_, n_x_);
   P_ << 1, 0, 0, 0, 0,
         0, 1, 0, 0, 0,
-        0, 0, 1, 0, 0,
-        0, 0, 0, 1, 0,
-        0, 0, 0, 0, 1;
+        0, 0, 100, 0, 0,   // Moderate uncertainty about velocity
+        0, 0, 0, 10, 0,    // Moderate uncertainty about yaw
+        0, 0, 0, 0, 1;     // Lower uncertainty about yaw rate
 
 
   // predicted sigma points matrix
@@ -53,15 +53,14 @@ UKF::UKF() {
   weights_ = VectorXd(2 * n_aug_ + 1);
   weights_(0) = lambda_ / (lambda_ + n_aug_);
   for (int i = 1; i < 2 * n_aug_ + 1; ++i) {
-    weights_(i) = 1 / (2 * lambda_ + 2 * n_aug_);
+    weights_(i) = 0.5 / (lambda_ + n_aug_);
   }
 
+  // Process noise standard deviation (longitudinal acceleration) in m/s^2
+  std_a_ = 0.3;
 
-  // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 2.0;
-
-  // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 2.0;
+  // Process noise standard deviation (yaw acceleration) in rad/s^2
+  std_yawdd_ = 0.3;
 
   // time when the state is true, in us
   time_us_ = 0.0;
@@ -117,11 +116,17 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
       // Convert polar coordinates to cartesian coordinates
       // Set the state with the initial location and zero velocity
-      x_ << rho * cos(phi),  // px - convert range/bearing to x position
-            rho * sin(phi),  // py - convert range/bearing to y position
-            0,               // v - velocity (unknown, set to 0)
-            0,               // yaw - yaw angle (unknown, set to 0)
-            0;               // yawd - yaw rate (unknown, set to 0)
+      if (fabs(rho) < 1e-6) {
+        rho = 1e-6; // prevent zero magnitude
+      }
+      double px = rho * cos(phi);
+      double py = rho * sin(phi);
+      
+      // Estimate velocity from range rate and bearing
+      double v = fabs(rho_dot); // Use magnitude of range rate as velocity estimate
+      if (v < 0.1) v = 0.1;     // Minimum velocity assumption
+      
+      x_ << px, py, v, phi, 0;  // Use bearing as initial yaw estimate
     }
     else {
       // Invalid sensor type - print error and exit
@@ -141,9 +146,17 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   }
 
   // Calculate time elapsed since last measurement
-  // Convert from microseconds to seconds
+  // Convert from microseconds to seconds and add bounds check for time step
   double dt = (meas_package.timestamp_ - time_us_) / 1000000.0;
-  time_us_ = meas_package.timestamp_;  // Update stored timestamp
+  if (dt <= 0.0001) {  // Skip if time step too small or negative
+    return;
+  }
+  if (dt > 0.5) {      // Cap maximum time step to prevent large jumps
+    dt = 0.5;
+  }
+  
+  time_us_ = meas_package.timestamp_;
+
 
   // PREDICTION STEP: Predict the state and covariance to the current time
   Prediction(dt);
@@ -235,16 +248,12 @@ void UKF::Prediction(double delta_t) {
 
     // Use different motion equations based on whether we're turning or going straight
     if (fabs(yawd) > 0.001) {
-      // Turning motion: use circular motion equations
-      // These equations integrate velocity over a curved path
-      px_pred = px + v / yawd * (sin(yaw + yawd * delta_t) - sin(yaw));
-      py_pred = py + v / yawd * (-1 * cos(yaw + yawd * delta_t) + cos(yaw));
+      px_pred = px + v/yawd * (sin(yaw + yawd*delta_t) - sin(yaw));
+      py_pred = py + v/yawd * (-cos(yaw + yawd*delta_t) + cos(yaw));
     }
     else {
-      // Straight line motion: yaw rate ≈ 0, avoid division by zero
-      // Use simple linear motion equations
-      px_pred = px + v * cos(yaw) * delta_t;
-      py_pred = py + v * sin(yaw) * delta_t;
+      px_pred = px + v*delta_t*cos(yaw);
+      py_pred = py + v*delta_t*sin(yaw);
     }
 
     // For this motion model, velocity and yaw rate are assumed constant
