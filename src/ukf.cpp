@@ -1,9 +1,12 @@
+#include <iostream>
 #include "ukf.h"
 #include "Eigen/Dense"
 
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
 
+
+bool bDebug = true;
 /**
  * Initializes Unscented Kalman filter
  */
@@ -44,7 +47,7 @@ UKF::UKF() {
 
   // predicted sigma points matrix
   Xsig_pred_ = MatrixXd(n_x_, 2 * n_aug_ + 1);
-  Xsig_pred_.fill(0.0);Add commentMore actions
+  Xsig_pred_.fill(0.0);
 
   // Weights of sigma points
   weights_ = VectorXd(2 * n_aug_ + 1);
