@@ -1,9 +1,9 @@
 # Unscented Kalman Filter for Highway
 
-## 1, Overview
+## 1. Overview
 This project implements an Unscented Kalman Filter to estimate the state of multiple cars on a highway using noisy *lidar* and *radar* measurements. We'll then evaluate the quality of our filter using RMSE values.
 
-<img src="media/ukf_highway_tracked.gif" width="700" height="400" />
+<img src="assets/ukf_highway_tracked.gif" width="700" height="400" />
 
 `main.cpp` is using `highway.h` to create a straight 3 lane highway environment with 3 traffic cars and the main ego car at the center. The viewer scene is centered around the ego car and the coordinate system is relative to the ego car as well. The ego car is green while the other traffic cars are blue. The traffic cars will be accelerating and altering their steering to change lanes. Each of the traffic car's has its own UKF object generated for it, and will update each indidual one during every time step. 
 
@@ -35,7 +35,7 @@ The main program can be built and ran by doing the following from the project to
 3. Compile: `cmake .. && make -j`
 4. Run it: `./ukf_highway`
 
-<img src="media/ukf_highway.png" width="700" height="400" />
+<img src="assets/ukf_highway.png" width="700" height="400" />
 
 #### Dependencies
 * cmake >= 3.10
@@ -183,7 +183,7 @@ The screenshot shown below is one of the simulation moments. The ego car is gree
 
 On the left-hand side, the root mean squared errors (RMSE) for position `(x,y)` and velocity `(Vx, Vy)` are calculated in realtime, which represent the prediction accuracy.
 
-<img src="media/ukf_result.png" width="800" height="500" />
+<img src="assets/ukf_highway_result.png" width="700" height="400" />
 
 
 
