@@ -70,7 +70,7 @@ change how measurements are taken, for instance lidar markers could be the (x,y)
 
 ## 4. UKF Implementation <a name="implementation"></a>
 
-### 1. Parameters
+## 4.1. Parameters
 File(s): `highway.h` - there are a number of parameters we can modify for debugging purpose.
 - `trackCars` list can toggle on/off cars for UKF object to track
 - `projectedTime` and `projectedSteps` controls the visualization of predicted position in the future
@@ -88,8 +88,30 @@ double projectedTime = 0;
 int projectedSteps = 0;
 ```
 
-### 2. Code Walkthrough
-#### 2.1. Initialize UKF attributes
+## 4.2. Code Walkthrough
+Instead of using mathematical approximations (like linearization), the UKF approach:
+1. Samples the uncertainty space with carefully chosen "sigma points"
+2. Runs each sample through the exact nonlinear motion model
+3. Statistically combines the results to get the predicted mean and covariance
+
+This gives much more accurate predictions for nonlinear systems compared to traditional Kalman filters. In the following steps, we will learn that `ProcessMeasurement` function = Update cycle that:
+- Takes in new sensor data (LIDAR or RADAR measurement)
+- Calls `Prediction()` first, then calls the appropriate update function (`UpdateLidar` or `UpdateRadar`)
+- This is the complete measurement processing cycle
+
+In this case, `Prediction` = Predict step only of the predict-update cycle. It uses motion model to estimate where object should be at current time, and no sensor data involved - purely physics/motion-based prediction.
+
+#### The Full Cycle
+Overall, we're implementing `ProcessMeasurement()` function that does:
+1. `Prediction(dt)`      -> "Where should object be now?" (physics)
+2. `UpdateLidar/Radar()` -> "Correct prediction with sensor data"
+
+Process Measurement basically manages the timing and calls both steps in sequence whenever new sensor data arrives -- which aligns with the standard Kalman filter pattern:
+1. *Predict:* Use motion model to forecast state
+2. *Update:* Use sensor measurement to correct the forecast
+
+
+### 1. Initialize UKF attributes
 File(s): `ukf.cpp`
 - dimension of the state vector `n_x_`
 - state vector `x_`
@@ -102,7 +124,7 @@ File(s): `ukf.cpp`
 - sigma points spreading parameter `lambda_`
 
 
-#### 2.2. Implement process measurement
+### 2. Implement process measurement
 File(s): `ukf.cpp` -> `UKF::ProcessMeasurement`
 
 For the very first incoming measurement, state vector `x_`, covariance matrix `P_`, and timestamp `time_us_` are initialized according to the raw data `meas_package.raw_measurements_` and `meas_package.timestamp_`.
@@ -123,6 +145,25 @@ The state vector has 5 elements: `[px, py, v, yaw, yawd]` representing position,
 This is a typical sensor fusion implementation where both LIDAR and RADAR measurements are used to track an object's state over time.
 
 
+### 3. Implement prediction
+File(s): `ukf.cpp` -> `UKF::Prediction()`
+
+The main functionality of this UKF Prediction function is to predict where an object will be at the next time step, while properly accounting for uncertainty and nonlinear motion. Meaning, given the current state estimate and elapsed time (`delta_t`), predict the object's future position, velocity, heading, and turn rate.
+
+The prediction process is the same for both Lidar and Radar measurements.
+
+- creates an augmented mean vector `x_aug` and augmented state covariance matrix `P_aug`
+- generate sigma points matrix `Xsig_aug` for previously estimated state vector
+- predict sigma points matrix `Xsig_pred_` for the current state vector 
+- predict the state mean `x_` and covariance `P_` using weights and predicted sigma points
+
+#### Key Capabilities
+- Handles nonlinear motion: Unlike linear Kalman filters, this can handle objects that turn (curved trajectories) as well as straight-line motion.
+- Uncertainty propagation: It doesn't just predict a single "best guess" - it predicts how uncertain we should be about that prediction by tracking how uncertainty grows over time.
+- Process noise modeling: Accounts for the fact that our motion model isn't perfect - real objects experience random accelerations and disturbances we can't predict exactly.
+
+
+#### 2.4. 
 
 ## Ackowledgements <a name="acknowledgements"></a>
 * [Udacity Sensor Fusion Program](https://www.udacity.com/course/sensor-fusion-engineer-nanodegree--nd313)

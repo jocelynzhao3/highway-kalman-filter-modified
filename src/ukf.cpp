@@ -35,6 +35,12 @@ UKF::UKF() {
 
   // initial covariance matrix
   P_ = MatrixXd(n_x_, n_x_);
+  P_ << 1, 0, 0, 0, 0,
+        0, 1, 0, 0, 0,
+        0, 0, 1, 0, 0,
+        0, 0, 0, 1, 0,
+        0, 0, 0, 0, 1;
+
 
   // predicted sigma points matrix
   Xsig_pred_ = MatrixXd(n_x_, 2 * n_aug_ + 1);
@@ -164,12 +170,131 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 }
 
 void UKF::Prediction(double delta_t) {
-  /**
-   * TODO: Complete this function! Estimate the object's location. 
-   * Modify the state vector, x_. Predict sigma points, the state, 
-   * and the state covariance matrix.
-   */
+  /* 
+  Estimate the object's location. Modify the state vector, x_. 
+  Predict sigma points, the state, and the state covariance matrix.
+  */
+
+  /* 1. Generate augmented sigma points */
+  // The augmented state includes process noise to capture uncertainty in the motion model
+  // Augmented state: [px, py, v, yaw, yawd, nu_a, nu_yawdd]
+  // where nu_a is longitudinal acceleration noise, nu_yawdd is yaw acceleration noise
+
+  // Create augmented mean vector (7D: original 5D state + 2D process noise)
+  VectorXd x_aug = VectorXd(n_aug_);
+  x_aug.head(5) = x_;  // Copy current state estimate
+  x_aug(5) = 0;        // Process noise mean for longitudinal acceleration (assumed zero)
+  x_aug(6) = 0;        // Process noise mean for yaw acceleration (assumed zero)
+
+  // Create augmented state covariance matrix (7x7)
+  MatrixXd P_aug = MatrixXd(n_aug_, n_aug_);
+  P_aug.fill(0.0);
+  P_aug.topLeftCorner(5, 5) = P_;                    // Current state covariance (5x5)
+  P_aug(5, 5) = std_a_ * std_a_;                     // Process noise variance for acceleration
+  P_aug(6, 6) = std_yawdd_ * std_yawdd_;            // Process noise variance for yaw acceleration
+
+  // Create matrix to hold sigma points (7 x 15 for 7D augmented state)
+  // We generate 2*n_aug + 1 = 15 sigma points
+  MatrixXd Xsig_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);
+
+  // Calculate square root of covariance matrix using Cholesky decomposition
+  // This gives us the "spread" directions for sigma points
+  MatrixXd L = P_aug.llt().matrixL();
+
+  // Generate augmented sigma points
+  Xsig_aug.col(0) = x_aug;  // First sigma point is the mean itself
+  for (int i = 0; i < n_aug_; ++i) {
+    // Generate sigma points by adding/subtracting scaled eigenvectors
+    // This creates a symmetric set of points around the mean
+    Xsig_aug.col(i + 1) = x_aug + sqrt(lambda_ + n_aug_) * L.col(i);          // "Positive" sigma points
+    Xsig_aug.col(i + 1 + n_aug_) = x_aug - sqrt(lambda_ + n_aug_) * L.col(i); // "Negative" sigma points
+  }
+
+  /* 2. Predict sigma points */
+  // Apply the motion model to each sigma point to predict where they'll be after delta_t
+
+  // Create matrix for predicted sigma points (5D state x 15 sigma points)
+  MatrixXd Xsig_pred = MatrixXd(n_x_, 2 * n_aug_ + 1);
+
+  // Process each sigma point through the motion model
+  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {
+    // Extract current state values from this sigma point
+    double px = Xsig_aug(0, i);        // x position
+    double py = Xsig_aug(1, i);        // y position
+    double v = Xsig_aug(2, i);         // velocity magnitude
+    double yaw = Xsig_aug(3, i);       // yaw angle (heading)
+    double yawd = Xsig_aug(4, i);      // yaw rate (angular velocity)
+    double nu_a = Xsig_aug(5, i);      // longitudinal acceleration noise
+    double nu_yawdd = Xsig_aug(6, i);  // yaw acceleration noise
+
+    // Apply motion model equations
+    double px_pred, py_pred;
+
+    // Use different motion equations based on whether we're turning or going straight
+    if (fabs(yawd) > 0.001) {
+      // Turning motion: use circular motion equations
+      // These equations integrate velocity over a curved path
+      px_pred = px + v / yawd * (sin(yaw + yawd * delta_t) - sin(yaw));
+      py_pred = py + v / yawd * (-1 * cos(yaw + yawd * delta_t) + cos(yaw));
+    }
+    else {
+      // Straight line motion: yaw rate ≈ 0, avoid division by zero
+      // Use simple linear motion equations
+      px_pred = px + v * cos(yaw) * delta_t;
+      py_pred = py + v * sin(yaw) * delta_t;
+    }
+
+    // For this motion model, velocity and yaw rate are assumed constant
+    double v_pred = v;
+    double yaw_pred = yaw + yawd * delta_t;  // Integrate yaw rate to get new yaw
+    double yawd_pred = yawd;
+
+    // Add process noise effects to the predicted state
+    // These represent uncertainty in our motion model
+    px_pred += 0.5 * delta_t * delta_t * cos(yaw) * nu_a;  // Acceleration noise affects position
+    py_pred += 0.5 * delta_t * delta_t * sin(yaw) * nu_a;  // (quadratic in time)
+    v_pred += delta_t * nu_a;                              // Acceleration noise affects velocity
+    yaw_pred += 0.5 * delta_t * delta_t * nu_yawdd;        // Yaw acceleration noise affects yaw
+    yawd_pred += delta_t * nu_yawdd;                       // Yaw acceleration noise affects yaw rate
+
+    // Store predicted sigma point
+    Xsig_pred(0, i) = px_pred;
+    Xsig_pred(1, i) = py_pred;
+    Xsig_pred(2, i) = v_pred;
+    Xsig_pred(3, i) = yaw_pred;
+    Xsig_pred(4, i) = yawd_pred;
+  }
+
+  /* 3. Predict mean and covariance */
+  // Combine all predicted sigma points to get predicted state and uncertainty
+
+  // Calculate predicted state mean as weighted average of predicted sigma points
+  x_.fill(0.0);
+  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {
+    x_ = x_ + weights_(i) * Xsig_pred.col(i);  // weights_ determined by UKF parameters
+  }
+
+  // Calculate predicted state covariance matrix
+  P_.fill(0.0);
+  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {
+    // Calculate difference between each sigma point and the predicted mean
+    VectorXd x_diff = Xsig_pred.col(i) - x_;
+    
+    // Normalize yaw angle to keep it within [-π, π] range
+    // This prevents angle wrapping issues (e.g., 179° and -179° are actually close)
+    while (x_diff(3) > M_PI) {
+      x_diff(3) -= 2.0 * M_PI;
+    }
+    while (x_diff(3) < -M_PI) {
+      x_diff(3) += 2.0 * M_PI;
+    }
+
+    // Accumulate weighted covariance contributions from each sigma point
+    // This captures how much the sigma points spread around the predicted mean
+    P_ = P_ + weights_(i) * x_diff * x_diff.transpose();
+  }
 }
+
 
 void UKF::UpdateLidar(MeasurementPackage meas_package) {
   /**
