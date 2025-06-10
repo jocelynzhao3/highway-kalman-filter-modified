@@ -163,7 +163,20 @@ The prediction process is the same for both Lidar and Radar measurements.
 - Process noise modeling: Accounts for the fact that our motion model isn't perfect - real objects experience random accelerations and disturbances we can't predict exactly.
 
 
-#### 2.4. 
+### 4. Implement updates on Lidar and Radar data
+File(s): `ukf.cpp` -> `UKF::UpdateLidar()` and `UKF::UpdateRadar()` 
+
+The steps to update Lidar and Radar measurements are similar, except Lidar points are in the **Cartesian** coordinates but Radar points are in the **Polar** coordinates. Therefore, they differ in the measurement dimension `n_z`, dimension of matrices, and the transformation equations.
+
+Generally, they follow the same steps to update the measurement.
+
+- transform the predicted sigma points `Xsig_pred_` into measurement space `Zsig` based on the sensor types
+- calculate the mean state `z_` and covariance matrix `S` with noise considered
+- calculate cross-correlation matrix `Tc` between state space and measurement space
+- calculate the Kalman gain `K`
+- update the state vector `x_` and covariance `P_`
+
+
 
 ## Ackowledgements <a name="acknowledgements"></a>
 * [Udacity Sensor Fusion Program](https://www.udacity.com/course/sensor-fusion-engineer-nanodegree--nd313)
