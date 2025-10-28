@@ -1,6 +1,7 @@
 #include <iostream>
 #include <random>
 #include "tools.h"
+#include "optimization_config.h"
 
 using namespace std;
 using std::vector;
@@ -21,13 +22,14 @@ lmarker Tools::lidarSense(Car& car, pcl::visualization::PCLVisualizer::Ptr& view
 {
 	MeasurementPackage meas_package;
 	meas_package.sensor_type_ = MeasurementPackage::LASER;
-  	meas_package.raw_measurements_ = VectorXd(2);
+   	// use fixed-size measurement vector
+   	meas_package.lidar_measurements_.fill(0.0);
 
 	lmarker marker = lmarker(car.position.x + noise(0.15,timestamp), car.position.y + noise(0.15,timestamp+1));
 	if(visualize)
 		viewer->addSphere(pcl::PointXYZ(marker.x,marker.y,3.0),0.5, 1, 0, 0,car.name+"_lmarker");
 
-    meas_package.raw_measurements_ << marker.x, marker.y;
+	meas_package.lidar_measurements_ << marker.x, marker.y;
     meas_package.timestamp_ = timestamp;
 
     car.ukf.ProcessMeasurement(meas_package);
@@ -48,11 +50,12 @@ rmarker Tools::radarSense(Car& car, Car ego, pcl::visualization::PCLVisualizer::
 		viewer->addLine(pcl::PointXYZ(ego.position.x, ego.position.y, 3.0), pcl::PointXYZ(ego.position.x+marker.rho*cos(marker.phi), ego.position.y+marker.rho*sin(marker.phi), 3.0), 1, 0, 1, car.name+"_rho");
 		viewer->addArrow(pcl::PointXYZ(ego.position.x+marker.rho*cos(marker.phi), ego.position.y+marker.rho*sin(marker.phi), 3.0), pcl::PointXYZ(ego.position.x+marker.rho*cos(marker.phi)+marker.rho_dot*cos(marker.phi), ego.position.y+marker.rho*sin(marker.phi)+marker.rho_dot*sin(marker.phi), 3.0), 1, 0, 1, car.name+"_rho_dot");
 	}
-	
+
 	MeasurementPackage meas_package;
 	meas_package.sensor_type_ = MeasurementPackage::RADAR;
-    meas_package.raw_measurements_ = VectorXd(3);
-    meas_package.raw_measurements_ << marker.rho, marker.phi, marker.rho_dot;
+	// use fixed-size radar measurement vector
+	meas_package.radar_measurements_.fill(0.0);
+	meas_package.radar_measurements_ << marker.rho, marker.phi, marker.rho_dot;
     meas_package.timestamp_ = timestamp;
 
     car.ukf.ProcessMeasurement(meas_package);
@@ -87,9 +90,16 @@ void Tools::ukfResults(Car car, pcl::visualization::PCLVisualizer::Ptr& viewer, 
 
 VectorXd Tools::CalculateRMSE(const vector<VectorXd> &estimations,
                               const vector<VectorXd> &ground_truth) {
-  
+
     VectorXd rmse(4);
 	rmse << 0,0,0,0;
+
+	// NOTE: RMSE calculation assumes the estimation and ground-truth
+	// vectors are aligned and that each VectorXd contains [px, py, vx, vy]
+	// (or the same ordering used when producing ground-truth). If the
+	// state mapping changes (for example to use v,yaw,yawd), the RMSE
+	// should be computed against the corresponding components. A common
+	// source of apparent RMSE improvement is fixing a mismatch here.
 
 	// check the validity of the following inputs:
 	//  * the estimation vector size should not be zero
@@ -139,4 +149,3 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr Tools::loadPcd(std::string file)
 
   return cloud;
 }
-

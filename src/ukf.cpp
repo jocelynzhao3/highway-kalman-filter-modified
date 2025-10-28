@@ -1,6 +1,7 @@
 #include <iostream>
 #include "ukf.h"
 #include "Eigen/Dense"
+#include "optimization_config.h"
 
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
@@ -23,40 +24,47 @@ UKF::UKF() {
 
 
   // State dimension
-  n_x_ = 5;
+  n_x_ = OptimizedTypes::n_x;
 
   // Augmented state dimension
-  n_aug_ = 7;
+  n_aug_ = OptimizedTypes::n_aug;
 
   // Sigma point spreading param
   lambda_ = 3 - n_aug_;
 
   // Initial state vector: [pos1 pos2 vel_abs yaw_angle yaw_rate] in SI units & rads
-  x_ = VectorXd(n_x_);
   x_.fill(0.0);
 
-
   // initial covariance matrix
-  P_ = MatrixXd(n_x_, n_x_);
+  P_.fill(0.0);
+  // Tuning: initial state covariance. Changes here affect how quickly
+  // the filter trusts measurements vs its prior prediction during early
+  // frames. Reducing velocity/yaw variances tightens early estimates and
+  // can significantly lower transient RMSE; increasing them makes the
+  // filter more conservative.
   P_ << 1, 0, 0, 0, 0,
-        0, 1, 0, 0, 0,
-        0, 0, 100, 0, 0,   // Moderate uncertainty about velocity
-        0, 0, 0, 10, 0,    // Moderate uncertainty about yaw
-        0, 0, 0, 0, 1;     // Lower uncertainty about yaw rate
+    0, 1, 0, 0, 0,
+    0, 0, 100, 0, 0,   // Moderate uncertainty about velocity
+    0, 0, 0, 10, 0,    // Moderate uncertainty about yaw
+    0, 0, 0, 0, 1;     // Lower uncertainty about yaw rate
 
 
-  // predicted sigma points matrix
-  Xsig_pred_ = MatrixXd(n_x_, 2 * n_aug_ + 1);
+  // predicted sigma points matrix (member already typed as fixed-size)
   Xsig_pred_.fill(0.0);
 
   // Weights of sigma points
-  weights_ = VectorXd(2 * n_aug_ + 1);
+  weights_.fill(0.0);
   weights_(0) = lambda_ / (lambda_ + n_aug_);
-  for (int i = 1; i < 2 * n_aug_ + 1; ++i) {
+  for (int i = 1; i < OptimizedTypes::n_sig; ++i) {
     weights_(i) = 0.5 / (lambda_ + n_aug_);
   }
 
   // Process noise standard deviation (longitudinal acceleration) in m/s^2
+  // Process noise tuning: these directly control how much the UKF
+  // attributes deviations to process/model uncertainty versus sensor
+  // measurements. Tuning std_a_ and std_yawdd_ is often the single most
+  // impactful change on RMSE when the motion model or sampling rate is
+  // slightly mismatched to the scenario.
   std_a_ = 0.3;
 
   // Process noise standard deviation (yaw acceleration) in rad/s^2
@@ -85,9 +93,9 @@ UKF::UKF() {
 
   // Radar measurement noise standard deviation radius change in m/s
   std_radrd_ = 0.3;
-  
+
   /**
-   * End DO NOT MODIFY section for measurement noise values 
+   * End DO NOT MODIFY section for measurement noise values
    */
 
 }
@@ -102,17 +110,17 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       // LIDAR provides direct x,y position measurements
       // Set the state with the initial location and zero velocity
       // State vector: [px, py, v, yaw, yawd]
-      x_ << meas_package.raw_measurements_[0],  // px - x position
-            meas_package.raw_measurements_[1],  // py - y position
+  x_ << meas_package.lidar_measurements_(0),  // px - x position
+    meas_package.lidar_measurements_(1),  // py - y position
             0,                                  // v - velocity (unknown, set to 0)
             0,                                  // yaw - yaw angle (unknown, set to 0)
             0;                                  // yawd - yaw rate (unknown, set to 0)
     }
     else if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
       // RADAR provides polar coordinates: range, bearing, range rate
-      double rho = meas_package.raw_measurements_[0];      // range (distance)
-      double phi = meas_package.raw_measurements_[1];      // bearing (angle)
-      double rho_dot = meas_package.raw_measurements_[2];  // range rate (radial velocity)
+  double rho = meas_package.radar_measurements_(0);      // range (distance)
+  double phi = meas_package.radar_measurements_(1);      // bearing (angle)
+  double rho_dot = meas_package.radar_measurements_(2);  // range rate (radial velocity)
 
       // Convert polar coordinates to cartesian coordinates
       // Set the state with the initial location and zero velocity
@@ -121,11 +129,11 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       }
       double px = rho * cos(phi);
       double py = rho * sin(phi);
-      
+
       // Estimate velocity from range rate and bearing
       double v = fabs(rho_dot); // Use magnitude of range rate as velocity estimate
       if (v < 0.1) v = 0.1;     // Minimum velocity assumption
-      
+
       x_ << px, py, v, phi, 0;  // Use bearing as initial yaw estimate
     }
     else {
@@ -154,7 +162,12 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   if (dt > 0.5) {      // Cap maximum time step to prevent large jumps
     dt = 0.5;
   }
-  
+
+  // Note on dt handling: ensuring dt uses consistent units and clamping
+  // oversized or near-zero steps prevents the prediction step from
+  // under/over-shooting. Incorrect dt handling is a common source of
+  // systematic error (drift) and large RMSE spikes.
+
   time_us_ = meas_package.timestamp_;
 
 
@@ -186,8 +199,8 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 }
 
 void UKF::Prediction(double delta_t) {
-  /* 
-  Estimate the object's location. Modify the state vector, x_. 
+  /*
+  Estimate the object's location. Modify the state vector, x_.
   Predict sigma points, the state, and the state covariance matrix.
   */
 
@@ -197,13 +210,12 @@ void UKF::Prediction(double delta_t) {
   // where nu_a is longitudinal acceleration noise, nu_yawdd is yaw acceleration noise
 
   // Create augmented mean vector (7D: original 5D state + 2D process noise)
-  VectorXd x_aug = VectorXd(n_aug_);
+  OptimizedTypes::AugmentedVector x_aug;
+  x_aug.fill(0.0);
   x_aug.head(5) = x_;  // Copy current state estimate
-  x_aug(5) = 0;        // Process noise mean for longitudinal acceleration (assumed zero)
-  x_aug(6) = 0;        // Process noise mean for yaw acceleration (assumed zero)
 
   // Create augmented state covariance matrix (7x7)
-  MatrixXd P_aug = MatrixXd(n_aug_, n_aug_);
+  OptimizedTypes::AugmentedCovMatrix P_aug;
   P_aug.fill(0.0);
   P_aug.topLeftCorner(5, 5) = P_;                    // Current state covariance (5x5)
   P_aug(5, 5) = std_a_ * std_a_;                     // Process noise variance for acceleration
@@ -211,11 +223,11 @@ void UKF::Prediction(double delta_t) {
 
   // Create matrix to hold sigma points (7 x 15 for 7D augmented state)
   // We generate 2*n_aug + 1 = 15 sigma points
-  MatrixXd Xsig_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);
+  OptimizedTypes::AugmentedSigmaPointMatrix Xsig_aug;
 
   // Calculate square root of covariance matrix using Cholesky decomposition
   // This gives us the "spread" directions for sigma points
-  MatrixXd L = P_aug.llt().matrixL();
+  OptimizedTypes::AugmentedCovMatrix L = P_aug.llt().matrixL();
 
   // Generate augmented sigma points
   Xsig_aug.col(0) = x_aug;  // First sigma point is the mean itself
@@ -230,7 +242,7 @@ void UKF::Prediction(double delta_t) {
   // Apply the motion model to each sigma point to predict where they'll be after delta_t
 
   // Create matrix for predicted sigma points (5D state x 15 sigma points)
-  MatrixXd Xsig_pred_ = MatrixXd(n_x_, 2 * n_aug_ + 1);
+  OptimizedTypes::SigmaPointMatrix Xsig_pred;
 
   // Process each sigma point through the motion model
   for (int i = 0; i < 2 * n_aug_ + 1; ++i) {
@@ -270,11 +282,11 @@ void UKF::Prediction(double delta_t) {
     yawd_pred += delta_t * nu_yawdd;                       // Yaw acceleration noise affects yaw rate
 
     // Store predicted sigma point
-    Xsig_pred_(0, i) = px_pred;
-    Xsig_pred_(1, i) = py_pred;
-    Xsig_pred_(2, i) = v_pred;
-    Xsig_pred_(3, i) = yaw_pred;
-    Xsig_pred_(4, i) = yawd_pred;
+    Xsig_pred(0, i) = px_pred;
+    Xsig_pred(1, i) = py_pred;
+    Xsig_pred(2, i) = v_pred;
+    Xsig_pred(3, i) = yaw_pred;
+    Xsig_pred(4, i) = yawd_pred;
   }
 
   /* 3. Predict mean and covariance */
@@ -282,16 +294,16 @@ void UKF::Prediction(double delta_t) {
 
   // Calculate predicted state mean as weighted average of predicted sigma points
   x_.fill(0.0);
-  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {
-    x_ = x_ + weights_(i) * Xsig_pred_.col(i);  // weights_ determined by UKF parameters
+  for (int i = 0; i < OptimizedTypes::n_sig; ++i) {
+    x_ = x_ + weights_(i) * Xsig_pred.col(i);  // weights_ determined by UKF parameters
   }
 
   // Calculate predicted state covariance matrix
   P_.fill(0.0);
-  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {
+  for (int i = 0; i < OptimizedTypes::n_sig; ++i) {
     // Calculate difference between each sigma point and the predicted mean
-    VectorXd x_diff = Xsig_pred_.col(i) - x_;
-    
+    OptimizedTypes::StateVector x_diff = Xsig_pred.col(i) - x_;
+
     // Normalize yaw angle to keep it within [-π, π] range
     // This prevents angle wrapping issues (e.g., 179° and -179° are actually close)
     while (x_diff(3) > M_PI) {
@@ -305,28 +317,31 @@ void UKF::Prediction(double delta_t) {
     // This captures how much the sigma points spread around the predicted mean
     P_ = P_ + weights_(i) * x_diff * x_diff.transpose();
   }
+
+  // store predicted sigma points into member
+  Xsig_pred_ = Xsig_pred;
 }
 
 
 void UKF::UpdateLidar(MeasurementPackage meas_package) {
   /**
-   * Use lidar data to update the belief about the object's position. 
+   * Use lidar data to update the belief about the object's position.
    * Modify the state vector, x_, and covariance, P_.
   */
 
   // set measurement dimension, lidar can measure x and y
-  int n_z = 2;
-  // create matrix for sigma points in measurement space
-  MatrixXd Zsig = MatrixXd(n_z, 2 * n_aug_ + 1);
-  // mean predicted measurement
-  VectorXd z_pred = VectorXd(n_z);
+  constexpr int n_z = OptimizedTypes::n_z_lidar;
+  // create matrix for sigma points in measurement space (fixed-size)
+  OptimizedTypes::LidarMeasurementMatrix Zsig;
+  // mean predicted measurement (fixed-size)
+  OptimizedTypes::LidarMeasurementVector z_pred;
   // measurement covariance matrix S
-  MatrixXd S = MatrixXd(n_z, n_z);
+  Eigen::Matrix<double, OptimizedTypes::n_z_lidar, OptimizedTypes::n_z_lidar> S;
 
-  // create a vector for incoming lidar measurement
-  VectorXd z = meas_package.raw_measurements_; 
+  // create a vector for incoming lidar measurement (fixed)
+  OptimizedTypes::LidarMeasurementVector z = meas_package.lidar_measurements_;
   // create matrix for cross correlation Tc
-  MatrixXd Tc = MatrixXd(n_x_, n_z);
+  Eigen::Matrix<double, OptimizedTypes::n_x, OptimizedTypes::n_z_lidar> Tc;
 
   /* 1. Transform sigma points into measurement space */
 
@@ -344,24 +359,15 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   // calculate mean predicted measurement
   z_pred.fill(0.0);
-  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {
+  for (int i = 0; i < OptimizedTypes::n_sig; ++i) {
     z_pred = z_pred + weights_(i) * Zsig.col(i);
   }
 
   // calculate innovation covariance matrix S
   S.fill(0.0);
-  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {
+  for (int i = 0; i < OptimizedTypes::n_sig; ++i) {
     // residual
-    VectorXd z_diff = Zsig.col(i) - z_pred;
-
-    // angle normalization
-    while (z_diff(1) > M_PI) {
-      z_diff(1) -= 2.0 * M_PI;
-    }
-    while (z_diff(1) < -M_PI) {
-      z_diff(1) += 2.0 * M_PI;
-    }
-
+    OptimizedTypes::LidarMeasurementVector z_diff = Zsig.col(i) - z_pred;
     S = S + weights_(i) * z_diff * z_diff.transpose();
   }
 
@@ -376,20 +382,13 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   // calculate cross correlation matrix
   Tc.fill(0.0);
-  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {  // 2n+1 simga points
+  for (int i = 0; i < OptimizedTypes::n_sig; ++i) {  // 2n+1 sigma points
     // residual
-    VectorXd z_diff = Zsig.col(i) - z_pred;
-    // angle normalization
-    while (z_diff(1) > M_PI) {
-      z_diff(1) -= 2.0 * M_PI;
-    }
-    while (z_diff(1) < -M_PI) {
-      z_diff(1) += 2.0 * M_PI;
-    }
+    OptimizedTypes::LidarMeasurementVector z_diff = Zsig.col(i) - z_pred;
 
     // state difference
-    VectorXd x_diff = Xsig_pred_.col(i) - x_;
-    // angle normalization
+    OptimizedTypes::StateVector x_diff = Xsig_pred_.col(i) - x_;
+    // angle normalization for yaw
     while (x_diff(3) > M_PI) {
       x_diff(3) -= 2.0 * M_PI;
     }
@@ -403,15 +402,8 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   // calculate Kalman gain K;
   MatrixXd K = Tc * S.inverse();
 
-  // residual
-  VectorXd z_diff = z - z_pred;
-  // angle normalization
-  while (z_diff(1) > M_PI) {
-    z_diff(1) -= 2.0 * M_PI;
-  }
-  while (z_diff(1) < -M_PI) {
-    z_diff(1) += 2.0 * M_PI;
-  }
+  // residual (fixed-size)
+  OptimizedTypes::LidarMeasurementVector z_diff = z - z_pred;
 
   // update state mean and covariance matrix
   x_ = x_ + K * z_diff;
@@ -421,24 +413,24 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
 void UKF::UpdateRadar(MeasurementPackage meas_package) {
   /**
-   * Use radar data to update the belief 
-   * about the object's position. Modify the state vector, x_, and 
+   * Use radar data to update the belief
+   * about the object's position. Modify the state vector, x_, and
    * covariance, P_.
    */
 
   // set measurement dimension, radar can measure r, phi, and r_dot
-  int n_z = 3;
-  // create matrix for sigma points in measurement space
-  MatrixXd Zsig = MatrixXd(n_z, 2 * n_aug_ + 1);
-  // mean predicted measurement
-  VectorXd z_pred = VectorXd(n_z);
+  constexpr int n_z = OptimizedTypes::n_z_radar;
+  // create matrix for sigma points in measurement space (fixed-size)
+  OptimizedTypes::RadarMeasurementMatrix Zsig;
+  // mean predicted measurement (fixed-size)
+  OptimizedTypes::RadarMeasurementVector z_pred;
   // measurement covariance matrix S
-  MatrixXd S = MatrixXd(n_z, n_z);
+  Eigen::Matrix<double, OptimizedTypes::n_z_radar, OptimizedTypes::n_z_radar> S;
 
-  // create a vector for incoming radar measurement
-  VectorXd z = meas_package.raw_measurements_;
+  // create a vector for incoming radar measurement (fixed)
+  OptimizedTypes::RadarMeasurementVector z = meas_package.radar_measurements_;
   // create matrix for cross correlation Tc
-  MatrixXd Tc = MatrixXd(n_x_, n_z);
+  Eigen::Matrix<double, OptimizedTypes::n_x, OptimizedTypes::n_z_radar> Tc;
 
   /* 1. Transform sigma points into measurement space */
   for (int i = 0; i < 2 * n_aug_ + 1; ++i) {
@@ -461,15 +453,15 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
   // calculate mean predicted measurement
   z_pred.fill(0.0);
-  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {
+  for (int i = 0; i < OptimizedTypes::n_sig; ++i) {
     z_pred = z_pred + weights_(i) * Zsig.col(i);
   }
 
   // calculate innovation covariance matrix S
   S.fill(0.0);
-  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {
+  for (int i = 0; i < OptimizedTypes::n_sig; ++i) {
     // residual
-    VectorXd z_diff = Zsig.col(i) - z_pred;
+    OptimizedTypes::RadarMeasurementVector z_diff = Zsig.col(i) - z_pred;
 
     // angle normalization
     while (z_diff(1) > M_PI) {
@@ -494,9 +486,9 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
   // calculate cross correlation matrix
   Tc.fill(0.0);
-  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {  // 2n+1 simga points
+  for (int i = 0; i < OptimizedTypes::n_sig; ++i) {  // 2n+1 sigma points
     // residual
-    VectorXd z_diff = Zsig.col(i) - z_pred;
+    OptimizedTypes::RadarMeasurementVector z_diff = Zsig.col(i) - z_pred;
     // angle normalization
     while (z_diff(1) > M_PI) {
       z_diff(1) -= 2.0 * M_PI;
@@ -506,7 +498,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     }
 
     // state difference
-    VectorXd x_diff = Xsig_pred_.col(i) - x_;
+    OptimizedTypes::StateVector x_diff = Xsig_pred_.col(i) - x_;
     // angle normalization
     while (x_diff(3) > M_PI) {
       x_diff(3) -= 2.0 * M_PI;
@@ -522,7 +514,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   MatrixXd K = Tc * S.inverse();
 
   // residual
-  VectorXd z_diff = z - z_pred;
+  OptimizedTypes::RadarMeasurementVector z_diff = z - z_pred;
   // angle normalization
   while (z_diff(1) > M_PI) {
     z_diff(1) -= 2.0 * M_PI;

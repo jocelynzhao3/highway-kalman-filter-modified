@@ -2,6 +2,7 @@
 #define UKF_H
 
 #include "Eigen/Dense"
+#include "optimization_config.h"
 #include "measurement_package.h"
 
 class UKF {
@@ -52,13 +53,13 @@ class UKF {
   bool use_radar_;
 
   // state vector: [pos1 pos2 vel_abs yaw_angle yaw_rate] in SI units and rad
-  Eigen::VectorXd x_;
+  OptimizedTypes::StateVector x_;
 
   // state covariance matrix
-  Eigen::MatrixXd P_;
+  OptimizedTypes::StateCovMatrix P_;
 
   // predicted sigma points matrix
-  Eigen::MatrixXd Xsig_pred_;
+  OptimizedTypes::SigmaPointMatrix Xsig_pred_;
 
   // time when the state is true, in us
   long long time_us_;
@@ -85,7 +86,7 @@ class UKF {
   double std_radrd_ ;
 
   // Weights of sigma points
-  Eigen::VectorXd weights_;
+  OptimizedTypes::WeightVector weights_;
 
   // State dimension
   int n_x_;

@@ -2,6 +2,7 @@
 #define MEASUREMENT_PACKAGE_H_
 
 #include "Eigen/Dense"
+#include "optimization_config.h"
 
 class MeasurementPackage {
 public:
@@ -12,7 +13,9 @@ public:
     RADAR
   } sensor_type_;
 
-  Eigen::VectorXd raw_measurements_;
+  // Fixed-size measurement storage to avoid dynamic allocations
+  OptimizedTypes::LidarMeasurementVector lidar_measurements_;
+  OptimizedTypes::RadarMeasurementVector radar_measurements_;
 
 };
 

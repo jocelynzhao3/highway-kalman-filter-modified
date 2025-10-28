@@ -1,6 +1,7 @@
 #ifndef LIDAR_H
 #define LIDAR_H
 #include "../render/render.h"
+#include "../optimization_config.h"
 #include <ctime>
 #include <chrono>
 
@@ -8,7 +9,7 @@ const double pi = 3.1415;
 
 struct Ray
 {
-	
+
 	Vect3 origin;
 	double resolution;
 	Vect3 direction;
@@ -18,7 +19,7 @@ struct Ray
 	// parameters:
 	// setOrigin: the starting position from where the ray is cast
 	// horizontalAngle: the angle of direction the ray travels on the xy plane
-	// verticalAngle: the angle of direction between xy plane and ray 
+	// verticalAngle: the angle of direction between xy plane and ray
 	// 				  for example 0 radians is along xy plane and pi/2 radians is stright up
 	// resoultion: the magnitude of the ray's step, used for ray casting, the smaller the more accurate but the more expensive
 
@@ -64,7 +65,7 @@ struct Ray
 			double rz = ((double) rand() / (RAND_MAX));
 			cloud->points.push_back(pcl::PointXYZ(castPosition.x+rx*sderr, castPosition.y+ry*sderr, castPosition.z+rz*sderr));
 		}
-			
+
 	}
 
 };
@@ -126,7 +127,7 @@ struct Lidar
 
 	pcl::PointCloud<pcl::PointXYZ>::Ptr scan()
 	{
- 
+
 		cloud->points.clear();
 		auto startTime = std::chrono::steady_clock::now();
 		for(Ray ray : rays)
