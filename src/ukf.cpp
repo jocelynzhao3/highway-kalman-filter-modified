@@ -110,17 +110,17 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       // LIDAR provides direct x,y position measurements
       // Set the state with the initial location and zero velocity
       // State vector: [px, py, v, yaw, yawd]
-  x_ << meas_package.lidar_measurements_(0),  // px - x position
-    meas_package.lidar_measurements_(1),  // py - y position
+      x_ << meas_package.lidar_measurements_(0),  // px - x position
+      meas_package.lidar_measurements_(1),  // py - y position
             0,                                  // v - velocity (unknown, set to 0)
             0,                                  // yaw - yaw angle (unknown, set to 0)
             0;                                  // yawd - yaw rate (unknown, set to 0)
     }
     else if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
       // RADAR provides polar coordinates: range, bearing, range rate
-  double rho = meas_package.radar_measurements_(0);      // range (distance)
-  double phi = meas_package.radar_measurements_(1);      // bearing (angle)
-  double rho_dot = meas_package.radar_measurements_(2);  // range rate (radial velocity)
+      double rho = meas_package.radar_measurements_(0);      // range (distance)
+      double phi = meas_package.radar_measurements_(1);      // bearing (angle)
+      double rho_dot = meas_package.radar_measurements_(2);  // range rate (radial velocity)
 
       // Convert polar coordinates to cartesian coordinates
       // Set the state with the initial location and zero velocity
@@ -242,7 +242,7 @@ void UKF::Prediction(double delta_t) {
   // Apply the motion model to each sigma point to predict where they'll be after delta_t
 
   // Create matrix for predicted sigma points (5D state x 15 sigma points)
-  OptimizedTypes::SigmaPointMatrix Xsig_pred;
+  OptimizedTypes::SigmaPointMatrix Xsig_pred; // BUG FIX: Xsig_pred instead of class Xsig_pred_
 
   // Process each sigma point through the motion model
   for (int i = 0; i < 2 * n_aug_ + 1; ++i) {

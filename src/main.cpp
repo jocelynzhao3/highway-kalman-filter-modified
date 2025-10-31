@@ -32,35 +32,39 @@ int main(int argc, char** argv)
 
 	double egoVelocity = 25;
 
-	auto chrono_start = std::chrono::high_resolution_clock::now();
-	while (frame_count < (frame_per_sec*sec_interval))
+	double compute_time_sum = 0.0;
+
+	while (frame_count < (frame_per_sec * sec_interval))
 	{
 		viewer->removeAllPointClouds();
 		viewer->removeAllShapes();
 
-		//stepHighway(egoVelocity, time_us, frame_per_sec, viewer);
-			highway.stepHighway(egoVelocity, time_us, frame_per_sec, viewer);
+		auto compute_start = std::chrono::high_resolution_clock::now();
 
-			// Compute and track RMSE statistics
-			if(!highway.tools.estimations.empty() && !highway.tools.ground_truth.empty())
+		highway.stepHighway(egoVelocity, time_us, frame_per_sec, viewer);
+
+		auto compute_end = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double> compute_duration = compute_end - compute_start;
+		compute_time_sum += compute_duration.count();
+
+		if(!highway.tools.estimations.empty() && !highway.tools.ground_truth.empty())
+		{
+			VectorXd rmse = highway.tools.CalculateRMSE(highway.tools.estimations, highway.tools.ground_truth);
+			if(rmse.size() == 4)
 			{
-				VectorXd rmse = highway.tools.CalculateRMSE(highway.tools.estimations, highway.tools.ground_truth);
-				if(rmse.size() == 4)
-				{
-					rmse_count++;
-					rmse_sum += rmse;  // Accumulate RMSE values
-					VectorXd rmse_avg = rmse_sum / rmse_count;  // Compute running average
-					std::cout << "Frame " << rmse_count
-						<< "\nInstant RMSE: [" << rmse.transpose() << "]"
-						<< "\nAverage RMSE: [" << rmse_avg.transpose() << "]\n" << std::endl;
-				}
+				rmse_count++;
+				rmse_sum += rmse;
+				VectorXd rmse_avg = rmse_sum / rmse_count;
+				std::cout << "\nAverage RMSE: [" << rmse_avg.transpose() << "]\n" << std::endl;
 			}
+		}
+
 		viewer->spinOnce(1000/frame_per_sec);
 		frame_count++;
-		time_us = 1000000*frame_count/frame_per_sec;
-
+		time_us = 1000000 * frame_count / frame_per_sec;
 	}
-	auto chrono_end = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double> duration = chrono_end - chrono_start;
-	std::cout << "Loop runtime: " << duration.count() << "s \n";
+
+	std::cout << "Total highway computation time: " << compute_time_sum << "s\n";
+	std::cout << "Average per frame: "
+			<< compute_time_sum / frame_count << "s\n";
 }
